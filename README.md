@@ -3,6 +3,10 @@
 Payload email adapter that sends transactional email through the Cloudflare Email Service Workers
 binding.
 
+<p align="center">
+  <img alt="Payload Cloudflare Email Adapter" src="assets/pcea-cover.jpg" width="100%" />
+</p>
+
 Built for Payload applications deployed to Cloudflare Workers. It uses Cloudflare's native
 `send_email` binding, so it does not require an API token or use the Cloudflare REST API.
 
