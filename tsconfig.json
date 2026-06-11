@@ -3,33 +3,20 @@
     "baseUrl": ".",
     "lib": [
       "DOM",
-      "DOM.Iterable",
       "ES2022"
     ],
-    "rootDir": "./",
-    "allowJs": true,
+    "rootDir": "./src",
+    "esModuleInterop": true,
     "skipLibCheck": true,
     "strict": true,
-    "esModuleInterop": true,
-    "module": "NodeNext",
-    "moduleResolution": "nodenext",
-    "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "react-jsx",
-    "incremental": true,
     "emitDeclarationOnly": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "target": "ES2022",
-    "composite": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ]
+    "declaration": true
   },
   "include": [
-    "./src/**/*.ts",
-    "./src/**/*.tsx",
-    "./dev/next-env.d.ts",
-    ".next/dev/types/**/*.ts"
+    "./src/**/*.ts"
   ]
 }

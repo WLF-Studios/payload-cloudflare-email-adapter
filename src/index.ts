@@ -1,113 +1,119 @@
-import type { CollectionSlug, Config } from 'payload'
+import type { EmailAdapter } from 'payload'
 
-import { customEndpointHandler } from './endpoints/customEndpointHandler.js'
-
-export type PayloadCloudflareEmailAdapterConfig = {
-  /**
-   * List of collections to add a custom field
-   */
-  collections?: Partial<Record<CollectionSlug, true>>
-  disabled?: boolean
+export type CloudflareEmailAddress = {
+  email: string
+  name?: string
 }
 
-export const payloadCloudflareEmailAdapter =
-  (pluginOptions: PayloadCloudflareEmailAdapterConfig) =>
-  (config: Config): Config => {
-    if (!config.collections) {
-      config.collections = []
-    }
+export type CloudflareEmailRecipient = CloudflareEmailAddress | string
 
-    config.collections.push({
-      slug: 'plugin-collection',
-      fields: [
-        {
-          name: 'id',
-          type: 'text',
-        },
-      ],
-    })
+export type CloudflareEmailMessage = {
+  bcc?: CloudflareEmailRecipient[]
+  cc?: CloudflareEmailRecipient[]
+  from: CloudflareEmailRecipient
+  html?: string
+  replyTo?: CloudflareEmailRecipient
+  subject: string
+  text?: string
+  to: CloudflareEmailRecipient[]
+}
 
-    if (pluginOptions.collections) {
-      for (const collectionSlug in pluginOptions.collections) {
-        const collection = config.collections.find(
-          (collection) => collection.slug === collectionSlug,
-        )
+export type CloudflareEmailResponse = {
+  messageId: string
+}
 
-        if (collection) {
-          collection.fields.push({
-            name: 'addedByPlugin',
-            type: 'text',
-            admin: {
-              position: 'sidebar',
-            },
-          })
-        }
-      }
-    }
+export type CloudflareEmailBinding = {
+  send(message: CloudflareEmailMessage): Promise<CloudflareEmailResponse>
+}
 
-    /**
-     * If the plugin is disabled, we still want to keep added collections/fields so the database schema is consistent which is important for migrations.
-     * If your plugin heavily modifies the database schema, you may want to remove this property.
-     */
-    if (pluginOptions.disabled) {
-      return config
-    }
+export type CloudflareEmailAdapterOptions = {
+  binding: CloudflareEmailBinding
+  defaultFromAddress: string
+  defaultFromName: string
+}
 
-    if (!config.endpoints) {
-      config.endpoints = []
-    }
+type PayloadEmailAddress = {
+  address: string
+  name?: string
+}
 
-    if (!config.admin) {
-      config.admin = {}
-    }
+type PayloadEmailRecipient = PayloadEmailAddress | string
+type PayloadEmailRecipientValue = PayloadEmailRecipient | PayloadEmailRecipient[]
 
-    if (!config.admin.components) {
-      config.admin.components = {}
-    }
+export const cloudflareEmailAdapter = ({
+  binding,
+  defaultFromAddress,
+  defaultFromName,
+}: CloudflareEmailAdapterOptions): EmailAdapter<CloudflareEmailResponse> => {
+  return () => ({
+    name: 'cloudflare-email-service',
+    defaultFromAddress,
+    defaultFromName,
+    sendEmail: async (message) => {
+      const html = typeof message.html === 'string' ? message.html : undefined
+      const text =
+        typeof message.text === 'string' ? message.text : html ? htmlToText(html) : undefined
 
-    if (!config.admin.components.beforeDashboard) {
-      config.admin.components.beforeDashboard = []
-    }
-
-    config.admin.components.beforeDashboard.push(
-      `payload-cloudflare-email-adapter/client#BeforeDashboardClient`,
-    )
-    config.admin.components.beforeDashboard.push(
-      `payload-cloudflare-email-adapter/rsc#BeforeDashboardServer`,
-    )
-
-    config.endpoints.push({
-      handler: customEndpointHandler,
-      method: 'get',
-      path: '/my-plugin-endpoint',
-    })
-
-    const incomingOnInit = config.onInit
-
-    config.onInit = async (payload) => {
-      // Ensure we are executing any existing onInit functions before running our own.
-      if (incomingOnInit) {
-        await incomingOnInit(payload)
-      }
-
-      const { totalDocs } = await payload.count({
-        collection: 'plugin-collection',
-        where: {
-          id: {
-            equals: 'seeded-by-plugin',
+      return binding.send({
+        bcc: normalizeAddresses(message.bcc),
+        cc: normalizeAddresses(message.cc),
+        from:
+          normalizeAddresses(message.from)[0] ?? {
+            name: defaultFromName,
+            email: defaultFromAddress,
           },
-        },
+        html,
+        replyTo: normalizeAddresses(message.replyTo)[0],
+        subject: String(message.subject ?? ''),
+        text,
+        to: normalizeAddresses(message.to),
       })
+    },
+  })
+}
 
-      if (totalDocs === 0) {
-        await payload.create({
-          collection: 'plugin-collection',
-          data: {
-            id: 'seeded-by-plugin',
-          },
-        })
-      }
+function normalizeAddresses(
+  value: PayloadEmailRecipientValue | undefined,
+): CloudflareEmailRecipient[] {
+  if (!value) {
+    return []
+  }
+
+  const values = Array.isArray(value) ? value : [value]
+
+  return values.flatMap((address) => {
+    if (typeof address !== 'string') {
+      return [
+        {
+          name: address.name,
+          email: address.address,
+        },
+      ]
     }
 
-    return config
+    return address.split(',').map(parseAddress)
+  })
+}
+
+function parseAddress(value: string): CloudflareEmailRecipient {
+  const address = value.trim()
+  const openingBracket = address.lastIndexOf('<')
+
+  if (openingBracket < 1 || !address.endsWith('>')) {
+    return address
   }
+
+  let name = address.slice(0, openingBracket).trim()
+  if (name.startsWith('"') && name.endsWith('"')) {
+    name = name.slice(1, -1)
+  }
+
+  return {
+    name,
+    email: address.slice(openingBracket + 1, -1).trim(),
+  }
+}
+
+function htmlToText(html: string): string {
+  return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+}
