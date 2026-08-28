@@ -165,7 +165,9 @@ The sender domain must be enabled for Cloudflare Email Sending. When
 - `Name <email@example.com>` address values
 - HTML and plain-text email bodies
 - a basic plain-text fallback when only HTML is provided
-- unchanged Cloudflare Email Service responses and errors
+- attachments supplied as a string, `Buffer`, or Node.js `Readable`
+- inline attachments using Nodemailer's `cid` field
+- unchanged Cloudflare Email Service responses and preserved machine-readable error codes
 
 The adapter does not add Payload collections, fields, endpoints, admin components, or database
 schema.
@@ -186,6 +188,8 @@ Options:
 - `binding`: Cloudflare Email Service Workers binding from the runtime environment.
 - `defaultFromAddress`: sender address used when Payload does not provide `from`.
 - `defaultFromName`: sender name used with the default sender address.
+- `maxMessageBytes`: adapter-side byte limit for the complete structured message payload. Defaults
+  to 5 MiB; use 25 MiB only when every destination address is verified.
 
 The package exports `CloudflareEmailBinding` for applications that do not directly use generated
 Wrangler types:
@@ -199,6 +203,29 @@ type CloudflareRuntime = {
   }
 }
 ```
+
+### Error handling
+
+The Workers binding rejects with an `Error` whose `code` is a machine-readable string such as
+`E_RATE_LIMIT_EXCEEDED`; it is not an HTTP status. The adapter converts documented Cloudflare
+errors to Payload `APIError` instances and preserves that string at `error.data.code`. Validation
+and configuration errors map to `400`, oversized content to `413`, rate and daily limits to `429`,
+delivery and internal service failures to `502`, and unknown Cloudflare codes to `500`. Errors
+without a string `code` are rethrown unchanged.
+
+### Attachments
+
+Each attachment requires `filename`, `contentType`, and `content`. File-system and URL `path`
+attachments are not supported; load their data into `content` first.
+
+Strings with `encoding: 'base64'` are passed through unchanged, while other strings are encoded as
+UTF-8. The adapter buffers Node.js `Readable` streams as `Uint8Array` values before sending the
+message. While attachments are mapped, their aggregate content is capped at `maxMessageBytes` so
+streams stop before consuming unbounded Worker memory. After the complete message object is built,
+the adapter measures its serialized metadata and attachment buffers together and applies the same
+limit to the entire payload. Cloudflare separately applies its authoritative
+[complete-message limit](https://developers.cloudflare.com/email-service/platform/limits/#email-content-limits)
+after MIME encoding and transport overhead are added.
 
 ## Development
 
