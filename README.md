@@ -218,8 +218,9 @@ without a string `code` are rethrown unchanged.
 Each attachment requires `filename`, `contentType`, and `content`. File-system and URL `path`
 attachments are not supported; load their data into `content` first.
 
-Strings with `encoding: 'base64'` are passed through unchanged, while other strings are encoded as
-UTF-8. The adapter buffers Node.js `Readable` streams as `Uint8Array` values before sending the
+Strings with `encoding: 'base64'` are decoded to raw bytes, while other strings are encoded as
+UTF-8. Decoding is required because the Cloudflare Workers binding treats string content as raw
+bytes rather than base64. The adapter buffers Node.js `Readable` streams as `Uint8Array` values before sending the
 message. While attachments are mapped, their aggregate content is capped at `maxMessageBytes` so
 streams stop before consuming unbounded Worker memory. After the complete message object is built,
 the adapter measures its serialized metadata and attachment buffers together and applies the same

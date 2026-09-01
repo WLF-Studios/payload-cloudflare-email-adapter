@@ -93,15 +93,17 @@ export const cloudflareEmailAdapter = ({
         typeof message.text === 'string' ? message.text : html ? htmlToText(html) : undefined
 
       const to = normalizeAddresses(message.to)
+      const cc = normalizeAddresses(message.cc)
+      const bcc = normalizeAddresses(message.bcc)
 
-      if (to.length > 50) {
-        // Cloudflare Email Service allows a maximum of 50 recipients per message
+      if (to.length + cc.length + bcc.length > 50) {
+        // Cloudflare Email Service allows a maximum of 50 recipients (to + cc + bcc) per message
         throw new APIError('Too many recipients: maximum allowed is 50', 400)
       }
 
       const emailMessage: CloudflareEmailMessage = {
-        bcc: normalizeAddresses(message.bcc),
-        cc: normalizeAddresses(message.cc),
+        bcc,
+        cc,
         from: normalizeAddresses(message.from)[0] ?? {
           name: defaultFromName,
           email: defaultFromAddress,
@@ -285,7 +287,9 @@ async function mapAttachmentContent(
     const normalizedEncoding = encoding?.toLowerCase()
 
     if (normalizedEncoding === 'base64') {
-      return content
+      // The Cloudflare Workers binding treats string content as raw bytes, not base64,
+      // so a base64 attachment must be decoded before it is handed to the binding.
+      return decodeBase64(content)
     }
 
     if (!normalizedEncoding || normalizedEncoding === 'utf8' || normalizedEncoding === 'utf-8') {
@@ -300,6 +304,25 @@ async function mapAttachmentContent(
   }
 
   return readAttachmentStream(content, maxBytes, maxMessageBytes)
+}
+
+function decodeBase64(value: string): Uint8Array {
+  // Nodemailer may wrap base64 content across lines; atob rejects whitespace.
+  const normalized = value.replace(/\s+/g, '')
+
+  let binary: string
+  try {
+    binary = atob(normalized)
+  } catch {
+    throw new APIError('Attachment base64 content is invalid', 400)
+  }
+
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+
+  return bytes
 }
 
 async function readAttachmentStream(

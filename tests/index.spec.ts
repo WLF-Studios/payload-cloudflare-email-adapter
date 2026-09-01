@@ -96,6 +96,26 @@ describe('cloudflareEmailAdapter', () => {
     ])
   })
 
+  test('rejects when combined to/cc/bcc recipients exceed 50', async () => {
+    const { adapter, send } = createAdapter()
+    const makeRecipients = (prefix: string, count: number) =>
+      Array.from({ length: count }, (_, i) => `${prefix}${i}@example.com`)
+
+    await expect(
+      adapter.sendEmail({
+        bcc: makeRecipients('bcc', 20),
+        cc: makeRecipients('cc', 20),
+        subject: 'Too many recipients',
+        to: makeRecipients('to', 11),
+      }),
+    ).rejects.toMatchObject({
+      message: 'Too many recipients: maximum allowed is 50',
+      status: 400,
+    })
+
+    expect(send).not.toHaveBeenCalled()
+  })
+
   test('rejects an oversized email payload without attachments', async () => {
     const { adapter, send } = createAdapter({ maxMessageBytes: 256 })
 
@@ -197,13 +217,37 @@ describe('cloudflareEmailAdapter', () => {
         type: 'text/plain',
       },
       {
-        content: 'AQID',
+        content: new Uint8Array([1, 2, 3]),
         contentId: 'logo@example',
         disposition: 'inline',
         filename: 'logo.png',
         type: 'image/png',
       },
     ])
+  })
+
+  test('rejects invalid base64 attachment content', async () => {
+    const { adapter, send } = createAdapter()
+
+    await expect(
+      adapter.sendEmail({
+        attachments: [
+          {
+            content: 'not*valid*base64',
+            contentType: 'image/png',
+            encoding: 'base64',
+            filename: 'logo.png',
+          },
+        ],
+        subject: 'Bad base64',
+        to: 'guest@example.com',
+      }),
+    ).rejects.toMatchObject({
+      message: 'Attachment base64 content is invalid',
+      status: 400,
+    })
+
+    expect(send).not.toHaveBeenCalled()
   })
 
   test('propagates errors without a Cloudflare code', async () => {
