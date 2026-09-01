@@ -1,6 +1,6 @@
 {
   "name": "payload-cloudflare-email-adapter",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Cloudflare Email Service adapter for Payload CMS",
   "license": "MIT",
   "type": "module",
